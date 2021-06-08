@@ -28,7 +28,9 @@ for samp_i=1:length(Sample_complete_rid)
     region_ind=sort(matchPPMs(newppm_range,ppm));
     % ridge index
     rowind=locstr.rowind;
+    [rowind,reord_ind]=sort(rowind);
     ppmloc=locstr.ppm;
+    ppmloc=ppmloc(reord_ind);
     colind_global=matchPPMs(ppmloc,ppm);
     colind_local=colind_global-region_ind(1)+1;
     % segmetation index
