@@ -1,6 +1,10 @@
 import copy
 import os
 from PIL import Image
+import pandas as pd
+import json
+import numpy as np
+from PIL import Image
 
 import torch
 import torch.utils.data
@@ -51,15 +55,15 @@ class ConvertCocoPolysToMask(object):
         image_id=target["image_id"]
         image_id=torch.tensor([image_id])
         anno=target["annotations"]
-        anno = [obj for obj in anno if obj['iscrowd'] == 0]
-        boxes = [obj["bbox"] for obj in anno]
+        anno=[obj for obj in anno if obj['iscrowd'] == 0]
+        boxes=[obj["bbox"] for obj in anno]
         # guard against no boxes via resizing
         boxes=torch.as_tensor(boxes,dtype=torch.float32).reshape(-1,4)
         boxes[:,2:] += boxes[:,:2]
         boxes[:,0::2].clamp_(min=0,max=w)
         boxes[:,1::2].clamp_(min=0,max=h)
         classes=[obj["category_id"] for obj in anno]
-        classes=torch.tensor(classes, dtype=torch.int64)
+        classes=torch.tensor(classes,dtype=torch.int64)
         segmentations=[obj["segmentation"] for obj in anno]
         masks=convert_coco_poly_to_mask(segmentations, h, w)
         keypoints=None
@@ -92,44 +96,43 @@ class ConvertCocoPolysToMask(object):
         #
         return image, target
 
-
-def _coco_remove_images_without_annotations(dataset, cat_list=None):
-    def _has_only_empty_bbox(anno):
-        return all(any(o <= 1 for o in obj["bbox"][2:]) for obj in anno)
+# def _coco_remove_images_without_annotations(dataset,cat_list=None):
+#     def _has_only_empty_bbox(anno):
+#         return all(any(o <= 1 for o in obj["bbox"][2:]) for obj in anno)
+#     #
+#     def _count_visible_keypoints(anno):
+#         return sum(sum(1 for v in ann["keypoints"][2::3] if v > 0) for ann in anno)
+#     #
+#     min_keypoints_per_image=10
+#     def _has_valid_annotation(anno):
+#         # if it's empty, there is no annotation
+#         if len(anno) == 0:
+#             return False
+#         # if all boxes have close to zero area, there is no annotation
+#         if _has_only_empty_bbox(anno):
+#             return False
+#         # keypoints task have a slight different critera for considering
+#         # if an annotation is valid
+#         if "keypoints" not in anno[0]:
+#             return True
+#         # for keypoint detection tasks, only consider valid images those
+#         # containing at least min_keypoints_per_image
+#         if _count_visible_keypoints(anno) >= min_keypoints_per_image:
+#             return True
+#         return False
+#     #
+#     # assert isinstance(dataset,torchvision.datasets.CocoDetection)
+#     ids=[]
+#     for ds_idx, img_id in enumerate(dataset.ids):
+#         ann_ids=dataset.coco.getAnnIds(imgIds=img_id,iscrowd=None)
+#         anno=dataset.coco.loadAnns(ann_ids)
+#         if cat_list:
+#             anno=[obj for obj in anno if obj["category_id"] in cat_list]
+#         if _has_valid_annotation(anno):
+#             ids.append(ds_idx)
     #
-    def _count_visible_keypoints(anno):
-        return sum(sum(1 for v in ann["keypoints"][2::3] if v > 0) for ann in anno)
-    #
-    min_keypoints_per_image=10
-    def _has_valid_annotation(anno):
-        # if it's empty, there is no annotation
-        if len(anno) == 0:
-            return False
-        # if all boxes have close to zero area, there is no annotation
-        if _has_only_empty_bbox(anno):
-            return False
-        # keypoints task have a slight different critera for considering
-        # if an annotation is valid
-        if "keypoints" not in anno[0]:
-            return True
-        # for keypoint detection tasks, only consider valid images those
-        # containing at least min_keypoints_per_image
-        if _count_visible_keypoints(anno) >= min_keypoints_per_image:
-            return True
-        return False
-    #
-    assert isinstance(dataset, torchvision.datasets.CocoDetection)
-    ids = []
-    for ds_idx, img_id in enumerate(dataset.ids):
-        ann_ids=dataset.coco.getAnnIds(imgIds=img_id, iscrowd=None)
-        anno=dataset.coco.loadAnns(ann_ids)
-        if cat_list:
-            anno=[obj for obj in anno if obj["category_id"] in cat_list]
-        if _has_valid_annotation(anno):
-            ids.append(ds_idx)
-    #
-    dataset=torch.utils.data.Subset(dataset, ids)
-    return dataset
+    # dataset=torch.utils.data.Subset(dataset,ids)
+    # return dataset
 
 
 def convert_to_coco_api(ds):
@@ -211,7 +214,7 @@ def get_coco_api_from_dataset(dataset):
 
 class loaddataset(torch.utils.data.Dataset):
     # modified from PennFudanDataset at https://pytorch.org/tutorials/intermediate/torchvision_tutorial.html
-    def __init__(self,root,transforms):
+    def __init__(self,root,transforms,classes):
         self.root=root
         self.transforms=transforms
         # load all image files, sorting them to
@@ -219,21 +222,24 @@ class loaddataset(torch.utils.data.Dataset):
         self.imgs=list(sorted(os.listdir(os.path.join(root))))
         anno_file=os.path.join(self.root,"regiondata.csv")
         self.annotab=pd.read_csv(anno_file,delimiter="\t")
+        self.ids=[i for i in range(len(self.imgs))]
+        self.classes=classes
     
     def __getitem__(self,idx):
         # load images
         file=self.imgs[idx]
         annotab=self.annotab
         img_path=os.path.join(self.root,file)
+        img=Image.open(img_path).convert("RGB")
         subtab=annotab[annotab['filename']==file]
         num_objs=subtab.shape[0]
-        tab_rec=subtab.iloc[anno_i]
+        # tab_rec=subtab.iloc[anno_i]
         # assert not tab_rec["region_attributes"]#check it is []
-        anno=json.loads(tab_rec["region_shape_attributes"])
-        labelclass=tab_rec["region_attibutes_named"]
+        # anno=json.loads(tab_rec["region_shape_attributes"])
+        # labelclass=tab_rec["region_attibutes_named"]
         boxes=[]
         segmentations=[]
-        for anno_i in range(subtab.shape[0]):#multiple masks/boxes
+        for anno_i in range(num_objs):#multiple masks/boxes
             tab_rec=subtab.iloc[anno_i]
             # assert not tab_rec["region_attributes"]#check it is []
             anno=json.loads(tab_rec["region_shape_attributes"])
@@ -245,7 +251,7 @@ class loaddataset(torch.utils.data.Dataset):
             py=anno["all_points_y"]
             poly=[(x+0.5,y+0.5) for x,y in zip(px,py)]
             poly=[p for x in poly for p in x]
-            category=np.where([ele==labelclass for ele in classes])[0]
+            category=np.where([ele==labelclass for ele in self.classes])[0]
             boxes.append([np.min(px),np.min(py),np.max(px),np.max(py)])
             segmentations.append([poly])
         #
@@ -273,7 +279,7 @@ class loaddataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.imgs)
 
-def get_dataset_loc(root,image_set,transforms,mode='instances'):
+def get_dataset_loc(root,image_set,transforms,classes,mode='instances'):
     anno_file_template="regiondata.csv"
     PATHS = {
         "train": ("train",os.path.join("train/",anno_file_template)),
@@ -287,11 +293,10 @@ def get_dataset_loc(root,image_set,transforms,mode='instances'):
     #
     img_folder,ann_file=PATHS[image_set]
     img_folder=os.path.join(root,img_folder)
-    ann_file=os.path.join(root,ann_file)
     # load data
-    dataset=loaddataset(img_folder,ann_file,transforms=transforms)
+    dataset=loaddataset(img_folder,transforms=transforms,classes=classes)
     #
-    if image_set=="train":
-        dataset=_coco_remove_images_without_annotations(dataset)
+    # if image_set=="train":
+    #     dataset=_coco_remove_images_without_annotations(dataset)
     #
     return dataset

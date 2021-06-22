@@ -27,7 +27,7 @@ import torchvision
 import torchvision.models.detection
 import torchvision.models.detection.mask_rcnn
 
-from dataset_utils import get_dataset_loc,
+from dataset_utils import get_dataset_loc
 
 from group_by_aspect_ratio import GroupedBatchSampler, create_aspect_ratio_groups
 from engine import train_one_epoch, evaluate
@@ -36,13 +36,13 @@ import presets
 import utils
 
 
-def get_dataset(name, image_set, transform, data_path):
+def get_dataset(name, image_set, transform, data_path,classes):
     paths={
         "loc_dataset": (data_path,get_dataset_loc,1),
     }
     p,ds_fn,num_classes=paths[name]
 
-    ds = ds_fn(p,image_set=image_set,transforms=transform)
+    ds = ds_fn(p,image_set=image_set,transforms=transform,classes=classes)
     return ds,num_classes
 
 
@@ -126,10 +126,9 @@ def main(args):
 
     # Data loading code
     print("Loading data")
-
-    dataset, num_classes = get_dataset(args.dataset, "train", get_transform(True, args.data_augmentation),
-                                       args.data_path)
-    dataset_test, _ = get_dataset(args.dataset, "val", get_transform(False, args.data_augmentation), args.data_path)
+    classes=['L1','Gravid Adult Hermaphrodite','Unidentified','L4']
+    dataset, num_classes = get_dataset(args.dataset, "train", get_transform(True, args.data_augmentation),args.data_path,classes)
+    dataset_test, _ = get_dataset(args.dataset, "val", get_transform(False, args.data_augmentation),args.data_path,classes)
 
     print("Creating data loaders")
     if args.distributed:
