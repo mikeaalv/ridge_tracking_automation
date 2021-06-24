@@ -34,20 +34,20 @@ import detectron2.utils.comm as comm
 from detectron2.modeling import build_model
 # default Arguments
 args_internal_dict={
-    "batch_size": (2,int),
+    "batch_size": (100,int),
     "epochs": (300,int),
     "learning_rate": (0.00025,float),
     # "no_cuda": (False,bool),
     "seed": (1,int),
     "depth": (18,int),#the depth of resnet. alternative 34
-    # "net_struct": ("mask_rcnn_R_50_FPN_3x",str),
+    "net_struct": ("mask_rcnn_R_50_FPN_3x",str),#just for the cfg settings here not loading weights or use this specific archicture
     # "optimizer": ("adam",str),##adam
     "gpu_use": (1,int),# whehter use gpu 1 use 0 not use
     "freeze_at": (0,int), #till n block ResNet has 5 blocks
     "aug_flag": (1,int)#whether do the more comprehensive augmentation (1) or not (0)
 }
 def build_aug(cfg):
-    augs=[T.ResizeShortestEdge(short_edge_length=(640,672,704,736,768,800),max_size=1333,sample_style='choice'),T.RandomBrightness(0.5,2.0),T.RandomCrop("relative_range",[0.5,0.5]),T.RandomFlip(),T.RandomRotation([0,360])]
+    augs=[T.ResizeShortestEdge(short_edge_length=(48,52,56),max_size=1333,sample_style='choice'),T.RandomBrightness(0.5,2.0),T.RandomCrop("relative_range",[0.5,0.5]),T.RandomFlip(),T.RandomRotation([0,360])]
     return augs
 
 class ValidationLoss_checkpoint(HookBase):
@@ -182,15 +182,30 @@ if args.gpu_use!=1:
     cfg.MODEL.DEVICE='cpu'
 
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE=128#Number of regions per image used to train RPN. faster, and good enough for this toy dataset (default: 512)
-cfg.MODEL.ROI_HEADS.NUM_CLASSES=4# only has one class (fungi). (see https://detectron2.readthedocs.io/tutorials/datasets.html#update-the-config-for-new-datasets)
+cfg.MODEL.ROI_HEADS.NUM_CLASSES=1# only has one class (fungi). (see https://detectron2.readthedocs.io/tutorials/datasets.html#update-the-config-for-new-datasets)
 cfg.MODEL.BACKBONE.FREEZE_AT=args.freeze_at
 # cfg.DATALOADER.FILTER_EMPTY_ANNOTATIONS=True
 cfg.SEED=args.seed
 cfg.AUG_FLAG=args.aug_flag
 # depth of resnet BACKBONE
 cfg.MODEL.RESNETS.DEPTH=args.depth
+cfg.MODEL.RESNETS.RES2_OUT_CHANNELS=64
 # turn off box loss
 cfg.MODEL.ROI_BOX_HEAD.BBOX_REG_LOSS_WEIGHT=0
+# reduce size of the model
+cfg.MODEL.ROI_BOX_HEAD.POOLER_RESOLUTION=1
+cfg.MODEL.ROI_BOX_HEAD.CONV_DIM=1
+cfg.MODEL.ROI_BOX_HEAD.FC_DIM=10
+cfg.MODEL.RPN.POST_NMS_TOPK_TRAIN=200
+cfg.MODEL.RPN.POST_NMS_TOPK_TEST=200
+cfg.INPUT.MIN_SIZE_TRAIN=(52,)
+# Turn on GN
+cfg.MODEL.RESNETS.STRIDE_IN_1X1=False
+cfg.MODEL.RESNETS.NORM="GN"
+cfg.MODEL.FPN.NORM="GN"
+cfg.MODEL.ROI_BOX_HEAD.NORM="GN"
+cfg.MODEL.ROI_MASK_HEAD.NORM="GN"
+#
 os.makedirs(cfg.OUTPUT_DIR,exist_ok=True)
 trainer=newtrainer(cfg)
 val_loss_checkp=ValidationLoss_checkpoint(cfg)
