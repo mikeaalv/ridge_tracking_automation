@@ -34,7 +34,7 @@ import detectron2.utils.comm as comm
 from detectron2.modeling import build_model
 # default Arguments
 args_internal_dict={
-    "batch_size": (100,int),
+    "batch_size": (10,int),
     "epochs": (300,int),
     "learning_rate": (0.00025,float),
     # "no_cuda": (False,bool),
@@ -47,7 +47,7 @@ args_internal_dict={
     "aug_flag": (1,int)#whether do the more comprehensive augmentation (1) or not (0)
 }
 def build_aug(cfg):
-    augs=[T.ResizeShortestEdge(short_edge_length=(48,52,56),max_size=1333,sample_style='choice'),T.RandomBrightness(0.5,2.0),T.RandomCrop("relative_range",[0.5,0.5]),T.RandomFlip(),T.RandomRotation([0,360])]
+    augs=[T.ResizeShortestEdge(short_edge_length=(48,52,56),max_size=1333,sample_style='choice'),T.RandomBrightness(0.5,2.0),T.RandomCrop("relative_range",[0.5,0.5]),T.RandomFlip()]#,T.RandomRotation([0,360])
     return augs
 
 class ValidationLoss_checkpoint(HookBase):
@@ -116,7 +116,8 @@ def get_amseg_dicts(img_dir,classes):
             
             px=anno["all_points_x"]
             py=anno["all_points_y"]
-            poly=[(x+0.5,y+0.5) for x,y in zip(px,py)]
+            # poly=[(x+0.5,y+0.5) for x,y in zip(px,py)]
+            poly=[(x,y) for x,y in zip(px,py)]
             poly=[p for x in poly for p in x]
             category=np.where([ele==labelclass for ele in classes])[0]
             if len(category)==0:
@@ -159,25 +160,27 @@ for key in args_internal_dict.keys():
 
 args=parser.parse_args()
 classes=['ridge']#classes name list
-for direc in ["train","validate",'test']:
+for direc in ["train","validate",'test','train_one']:
     DatasetCatalog.register("rid_"+direc,lambda direc=direc: get_amseg_dicts("../data/processed/"+direc,classes))
     MetadataCatalog.get("rid_"+direc).set(thing_classes=classes)
 
 # configuration parameters
 cfg=get_cfg()
 cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/"+args.net_struct+".yaml"))
-cfg.DATASETS.TRAIN=("rid_train",)
+cfg.DATASETS.TRAIN=("rid_train",)#rid_train_one
 cfg.DATASETS.VAL=("rid_validate",)#("",)
 # cfg.VALSIZE=len(get_amseg_dicts("../data/AM_classify/validate"))
-trainsize=len(get_amseg_dicts("../data/processed/train",classes))
+trainsize=len(get_amseg_dicts("../data/processed/train",classes))#train_one
 cfg.DATASETS.TEST=()
 # cfg.TEST.EVAL_PERIOD=20
 cfg.DATALOADER.NUM_WORKERS=2
 # cfg.MODEL.WEIGHTS=model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/"+args.net_struct+".yaml")#Let training initialize from model zoo
 cfg.MODEL.WEIGHTS=""#random initialization
 cfg.SOLVER.IMS_PER_BATCH=args.batch_size
-cfg.SOLVER.BASE_LR=args.learning_rate
-cfg.SOLVER.MAX_ITER=np.int(args.epochs*trainsize/args.batch_size) #iterations or epochs
+# cfg.SOLVER.BASE_LR=args.learning_rate
+cfg.SOLVER.BASE_LR=0.02
+# cfg.SOLVER.MAX_ITER=np.int(args.epochs*trainsize/args.batch_size) #iterations or epochs
+cfg.SOLVER.MAX_ITER=500
 if args.gpu_use!=1:
     cfg.MODEL.DEVICE='cpu'
 
@@ -191,20 +194,25 @@ cfg.AUG_FLAG=args.aug_flag
 cfg.MODEL.RESNETS.DEPTH=args.depth
 cfg.MODEL.RESNETS.RES2_OUT_CHANNELS=64
 # turn off box loss
-cfg.MODEL.ROI_BOX_HEAD.BBOX_REG_LOSS_WEIGHT=0
+# cfg.MODEL.ROI_BOX_HEAD.BBOX_REG_LOSS_WEIGHT=0
 # reduce size of the model
-cfg.MODEL.ROI_BOX_HEAD.POOLER_RESOLUTION=1
-cfg.MODEL.ROI_BOX_HEAD.CONV_DIM=1
-cfg.MODEL.ROI_BOX_HEAD.FC_DIM=10
-cfg.MODEL.RPN.POST_NMS_TOPK_TRAIN=200
-cfg.MODEL.RPN.POST_NMS_TOPK_TEST=200
-cfg.INPUT.MIN_SIZE_TRAIN=(52,)
+# cfg.MODEL.ROI_BOX_HEAD.POOLER_RESOLUTION=1
+# cfg.MODEL.ROI_BOX_HEAD.CONV_DIM=1
+# cfg.MODEL.ROI_BOX_HEAD.FC_DIM=10
+# cfg.MODEL.RPN.POST_NMS_TOPK_TRAIN=200
+# cfg.MODEL.RPN.POST_NMS_TOPK_TEST=200
+# cfg.INPUT.MIN_SIZE_TRAIN=(52,)
 # Turn on GN
 cfg.MODEL.RESNETS.STRIDE_IN_1X1=False
 cfg.MODEL.RESNETS.NORM="GN"
 cfg.MODEL.FPN.NORM="GN"
 cfg.MODEL.ROI_BOX_HEAD.NORM="GN"
 cfg.MODEL.ROI_MASK_HEAD.NORM="GN"
+# RPN options
+cfg.MODEL.RPN.BBOX_REG_WEIGHTS=(1.0,1.0,10.0,10.0)#Weights on (dx, dy, dw, dh)
+# Anchor
+cfg.MODEL.ANCHOR_GENERATOR.ASPECT_RATIOS=[[2.0,5.0,13.0,26.0]]
+# cfg.MODEL.ANCHOR_GENERATOR.SIZES=[[64,128,256,512,1024]]
 #
 os.makedirs(cfg.OUTPUT_DIR,exist_ok=True)
 trainer=newtrainer(cfg)
@@ -219,12 +227,20 @@ cfg.MODEL.WEIGHTS=os.path.join(cfg.OUTPUT_DIR,"model_best.pth")# path to the mod
 trainer_val=newtrainer(cfg)
 trainer_val.resume_or_load(resume=False)
 # performance on training set
-evaluator_train=COCOEvaluator("rid_train",("bbox","segm"),False,output_dir="./output/")
-train_loader=build_detection_test_loader(cfg,"rid_train")
+evaluator_train=COCOEvaluator("rid_train_one",("bbox","segm"),False,output_dir="./output/")
+train_loader=build_detection_test_loader(cfg,"rid_train_one")
 print(inference_on_dataset(trainer_val.model,train_loader,evaluator_train))
 #
-cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST=0.7# set a custom testing threshold
+# cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST=0.7# set a custom testing threshold
+cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST=0.01
 predictor=DefaultPredictor(cfg)
+dataset_dicts=get_amseg_dicts("../data/processed/train_one",classes)
+d=next(iter(dataset_dicts))
+im=cv2.imread(d["file_name"])
+outputs=predictor(im)
+outputs['instances']
+np.where(outputs['instances'].pred_masks.to('cpu'))
+boxes=outputs['instances'].pred_boxes.to('cpu').tensor
 
 # validation data set
 am_metadata_val=MetadataCatalog.get("rid_validate")
