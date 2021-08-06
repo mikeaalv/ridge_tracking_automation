@@ -13,10 +13,11 @@ filename={};
 region_attributes={};
 shapename='polygon';
 fileext='jpg';
+samples=[1,2,3,7,8,9];
 for samp_i=1:length(Sample_complete_rid)
   sample_rep=Sample_complete_rid(samp_i);
   nridges=size(sample_rep.ridges,2)-1;
-  data=sampleData(samp_i);
+  data=sampleData(samples(samp_i));
   mat=data.Xcollapsed_1h1d;
   ppm=data.ppm_1h1d;
   tempregion=nan();%the targetted region
@@ -65,3 +66,6 @@ end
 region_name=repmat('ridge',[length(filename),1]);
 labeletab=table(filename',region_attributes',region_name,'VariableNames',{'filename' 'region_attributes' 'region_name'});
 writetable(labeletab,['labels.txt'],'Delimiter','\t');
+
+% plot checking of the result
+% surface image with peak ridge
