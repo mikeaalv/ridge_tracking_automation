@@ -15,16 +15,16 @@ shapename='polygon';
 fileext='jpg';
 samples=[1,2,3,7,8,9];
 for samp_i=1:length(Sample_complete_rid)
-  sample_rep=Sample_complete_rid(samp_i);
-  nridges=size(sample_rep.ridges,2)-1;
+  sample_rep=Sample_complete_rid(samp_i).ridges;
+  nridges=size(sample_rep,2)-1;
   data=sampleData(samples(samp_i));
   mat=data.Xcollapsed_1h1d;
   ppm=data.ppm_1h1d;
   tempregion=nan();%the targetted region
   % all regions
   regions=[];
-  for ridi=1:length(sample_rep)
-    loc_region=sort(sample_rep(ridi).parameters.region);
+  for ridi=1:nridges
+    loc_region=sort(sample_rep(ridi+1).parameters.region);
     regions=[regions; loc_region];
   end
   regions=unique(regions,'rows');
@@ -62,11 +62,11 @@ for samp_i=1:length(Sample_complete_rid)
     % close(fig);
   end
   for i=1:nridges
-    locpara=sample_rep.ridges(i+1).parameters;
-    locstr=sample_rep.ridges(i+1).result;
+    locpara=sample_rep(i+1).parameters;
+    locstr=sample_rep(i+1).result;
     % local region
     newppm_range_loc=sort(locpara.region);
-    regmatchind=find(newppm_range_loc(1)<=regions_comb(:,1)&newppm_range_loc(2)<=regions_comb(:,2));
+    regmatchind=find(newppm_range_loc(1)>=regions_comb(:,1)&newppm_range_loc(2)<=regions_comb(:,2));
     newppm_range=regions_comb(regmatchind,:);
     region_ind=sort(matchPPMs(newppm_range,ppm));
     % ridge index
@@ -98,14 +98,20 @@ writetable(labeletab,['labels.txt'],'Delimiter','\t');
 
 % plot checking of the result
 % surface image with peak ridge
+filelist_str=dir('*.jpg');
 tab_seg=readtable('labels.txt','Delimiter','\t');
-rndinds=randsample(1:size(tab_seg,1),10);
+rndinds=randsample(1:length(filelist_str),10);
 for rndind=rndinds
-  record=tab_seg(rndind,:);
-  immat=imread(record{:,'filename'});
-  js_str=jsondecode(record{:,'region_attributes'}{1});
-  xvec=js_str.all_points_x;
-  yvec=js_str.all_points_y;
+  filehere=filelist_str(rndind).name;
+  records=tab_seg(find(strcmp(tab_seg{:,'filename'},filehere)),:);
+  immat=imread(filehere);
+  xvec=[];
+  yvec=[];
+  for rowi=1:size(records,1)
+    js_str=jsondecode(records{rowi,'region_attributes'}{1});
+    xvec=[xvec; js_str.all_points_x];
+    yvec=[yvec; js_str.all_points_y];
+  end
   linind=sub2ind(size(immat),yvec,xvec);
   fig=figure(), hold on
       surf(immat,'FaceColor','Interp');
@@ -116,3 +122,4 @@ for rndind=rndinds
       scatter3(xvec,yvec,immat(linind),'r','linewidth',3);
   saveas(fig,['../test/' num2str(rndind) '.fig']);
   close(fig);
+end
