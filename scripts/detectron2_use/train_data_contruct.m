@@ -21,11 +21,53 @@ for samp_i=1:length(Sample_complete_rid)
   mat=data.Xcollapsed_1h1d;
   ppm=data.ppm_1h1d;
   tempregion=nan();%the targetted region
+  % all regions
+  regions=[];
+  for ridi=1:length(sample_rep)
+    loc_region=sort(sample_rep(ridi).parameters.region);
+    regions=[regions; loc_region];
+  end
+  regions=unique(regions,'rows');
+  regions=sortrows(regions,[1,2]);
+  % combine overlapped regions
+  regions_comb=[];
+  for regi=1:size(regions,1)
+    newreg=regions(regi,:);
+    if length(regions_comb)==0
+      regions_comb=[regions_comb; newreg];
+    else
+      lastreg=regions_comb(end,:);
+      if lastreg(2)<=newreg(1)
+        regions_comb=[regions_comb; newreg];
+      else
+        regions_comb(end,:)=[lastreg(1) max(lastreg(2),newreg(2))];
+      end
+    end
+  end
+  % store image for each region
+  filenames_range={};
+  for regioni=1:size(regions_comb,1)
+    newppm_range=regions_comb(regioni,:);
+    region_ind=sort(matchPPMs(newppm_range,ppm));
+    locamat=mat(:,region_ind(1):region_ind(2));
+    locamat=locamat-min(locamat(:));
+    locamat=locamat/max(locamat(:))*255;
+    % fig=figure();
+    % imshow(uint8(locamat));
+    % fig=figure();
+    % surf(locamat);
+    imagename=['image_',num2str(samples(samp_i)),'_',num2str(newppm_range(1)),'_',num2str(newppm_range(2)),'.',fileext];
+    imwrite(uint8(locamat),[imagename],fileext);
+    filenames_range=[filenames_range imagename];
+    % close(fig);
+  end
   for i=1:nridges
     locpara=sample_rep.ridges(i+1).parameters;
     locstr=sample_rep.ridges(i+1).result;
     % local region
-    newppm_range=locpara.region;
+    newppm_range_loc=sort(locpara.region);
+    regmatchind=find(newppm_range_loc(1)<=regions_comb(:,1)&newppm_range_loc(2)<=regions_comb(:,2));
+    newppm_range=regions_comb(regmatchind,:);
     region_ind=sort(matchPPMs(newppm_range,ppm));
     % ridge index
     rowind=locstr.rowind;
@@ -46,21 +88,8 @@ for samp_i=1:length(Sample_complete_rid)
     y_str=strjoin(cellstr(num2str(all_points_y')),',');
     region_attributes_ele=['"{""name"":""' shapename '"",""all_points_x"":[' x_str '],""all_points_y"":[' y_str ']}"'];
     %
-    imagename=['image_',num2str(samp_i),'_',num2str(newppm_range(1)),'_',num2str(newppm_range(2)),'.',fileext];
-    filename=[filename imagename];
+    filename=[filename filenames_range(regmatchind)];
     region_attributes=[region_attributes region_attributes_ele];
-    if isnan(tempregion) | (~(tempregion(1)==newppm_range(1)&tempregion(2)==newppm_range(2)))
-      tempregion=newppm_range;
-      locamat=mat(:,region_ind(1):region_ind(2));
-      locamat=locamat-min(locamat(:));
-      locamat=locamat/max(locamat(:))*255;
-      % fig=figure();
-      % imshow(uint8(locamat));
-      % fig=figure();
-      % surf(locamat);
-      imwrite(uint8(locamat),[imagename],fileext);
-      % close(fig);
-    end
   end
 end
 region_name=repmat('ridge',[length(filename),1]);
@@ -69,3 +98,21 @@ writetable(labeletab,['labels.txt'],'Delimiter','\t');
 
 % plot checking of the result
 % surface image with peak ridge
+tab_seg=readtable('labels.txt','Delimiter','\t');
+rndinds=randsample(1:size(tab_seg,1),10);
+for rndind=rndinds
+  record=tab_seg(rndind,:);
+  immat=imread(record{:,'filename'});
+  js_str=jsondecode(record{:,'region_attributes'}{1});
+  xvec=js_str.all_points_x;
+  yvec=js_str.all_points_y;
+  linind=sub2ind(size(immat),yvec,xvec);
+  fig=figure(), hold on
+      surf(immat,'FaceColor','Interp');
+      ylabel('y')
+      zlabel('z')
+      title(['example'])
+      xlabel('x')
+      scatter3(xvec,yvec,immat(linind),'r','linewidth',3);
+  saveas(fig,['../test/' num2str(rndind) '.fig']);
+  close(fig);
