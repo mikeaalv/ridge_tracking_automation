@@ -18,7 +18,11 @@ function [ridpoint Hmat Kmat]=rid_point_pred(submat)
 if ~exist('submat','var')
   error('please provide input intensity matrix');
 end
+% default parameters
 windsize=7;
+threhold_H=0;
+threhold_K=1;
+%
 halfwidplus=(windsize+1)/2;
 halfwidminus=(windsize-1)/2;
 sizes=size(submat);
