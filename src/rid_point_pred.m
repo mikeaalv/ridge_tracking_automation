@@ -8,7 +8,7 @@ function [ridpoint Hmat Kmat]=rid_point_pred(submat)
 %     Hmat: the H matrix
 %     Kmat: the K matrix
 % Examples:
-%
+%     refer to the example in rid_point_predTest.ms
 % Test:
 % results = runtests('rid_point_predTest.m')
 %
